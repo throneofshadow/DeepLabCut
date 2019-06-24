@@ -72,7 +72,7 @@ def getpose(image, cfg, sess, inputs, outputs, outall=False):
     if outall:
         return scmap, locref, pose
     else:
-        return pose
+        return pose,scmap
 
 ## Functions below implement are for batch sizes > 1:
 def extract_cnn_outputmulti(outputs_np, cfg):
@@ -117,5 +117,5 @@ def getposeNP(image, cfg, sess, inputs, outputs, outall=False):
     if outall:
         return scmap, locref, pose
     else:
-        return pose
+        return pose,scmap
 

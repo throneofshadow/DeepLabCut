@@ -250,7 +250,11 @@ def SaveData(PredicteData, metadata, dataname, pdindex, imagenames,save_as_csv):
     with open(dataname.split('.h5')[0] + 'includingmetadata.pickle', 'wb') as f:
         # Pickle the 'data' dictionary using the highest protocol available.
         pickle.dump(metadata, f, pickle.HIGHEST_PROTOCOL)
-
+def SaveScoreMap(scmap_total,dataname):
+    with open(dataname+'csv', "wb") as f:
+        writer = csv.writer(f)
+        writer.writerows(scmap_total)
+        writer.close()
 def LoadVideoMetadata(dataname):
     ''' Load meta data from analyzed video, created by predict_videos.py '''
     with open(dataname.split('.h5')[0] + 'includingmetadata.pickle', 'rb') as f: #same as in SaveData!

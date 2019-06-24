@@ -109,7 +109,7 @@ def analyze_videos(config,videos,videotype='avi',shuffle=1,trainingsetindex=0,gp
     start_path=os.getcwd() #record cwd to return to this directory in the end
     
     cfg = auxiliaryfunctions.read_config(config)
-    
+    scmap_total=[]
     if cropping is not None:
         cfg['cropping']=True
         cfg['x1'],cfg['x2'],cfg['y1'],cfg['y2']=cropping
@@ -212,23 +212,25 @@ def GetPoseF(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes,batchsize):
                     frames[batch_ind] = img_as_ubyte(frame)
                     
                 if batch_ind==batchsize-1:
-                    pose = predict.getposeNP(frames,dlc_cfg, sess, inputs, outputs)
+                    pose,scmap = predict.getposeNP(frames,dlc_cfg, sess, inputs, outputs)
                     PredicteData[batch_num*batchsize:(batch_num+1)*batchsize, :] = pose
+                    scmap_total.append(scmap)
                     batch_ind = 0
                     batch_num += 1
                 else:
-                   batch_ind+=1
+                    batch_ind+=1
             else:
                 nframes = counter
                 print("Detected frames: ", nframes)
                 if batch_ind>0:
-                    pose = predict.getposeNP(frames, dlc_cfg, sess, inputs, outputs) #process the whole batch (some frames might be from previous batch!)
+                    pose,scmap = predict.getposeNP(frames, dlc_cfg, sess, inputs, outputs) #process the whole batch (some frames might be from previous batch!)
                     PredicteData[batch_num*batchsize:batch_num*batchsize+batch_ind, :] = pose[:batch_ind,:]
+                    scmap_total.append(scmap)
                 break
             counter+=1
 
     pbar.close()
-    return PredicteData,nframes
+    return PredicteData,nframes,scmap_total
 
 def GetPoseS(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes):
     ''' Non batch wise pose estimation for video cap.'''
@@ -260,15 +262,16 @@ def GetPoseS(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes):
                     frame= img_as_ubyte(frame[cfg['y1']:cfg['y2'],cfg['x1']:cfg['x2']])
                 else:
                     frame = img_as_ubyte(frame)
-                pose = predict.getpose(frame, dlc_cfg, sess, inputs, outputs)
+                pose,scmap = predict.getpose(frame, dlc_cfg, sess, inputs, outputs)
                 PredicteData[counter, :] = pose.flatten()  # NOTE: thereby cfg['all_joints_names'] should be same order as bodyparts!
+                scmap_total.append(scmap)
             else:
                 nframes=counter
                 break
             counter+=1
             
     pbar.close()
-    return PredicteData,nframes
+    return PredicteData,nframes,scmap_total
 
 
 def AnalyzeVideo(video,DLCscorer,trainFraction,cfg,dlc_cfg,sess,inputs, outputs,pdindex,save_as_csv, destfolder=None):
@@ -298,9 +301,9 @@ def AnalyzeVideo(video,DLCscorer,trainFraction,cfg,dlc_cfg,sess,inputs, outputs,
 
         print("Starting to extract posture")
         if int(dlc_cfg["batch_size"])>1:
-            PredicteData,nframes=GetPoseF(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes,int(dlc_cfg["batch_size"]))
+            PredicteData,nframes,scmap_total=GetPoseF(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes,int(dlc_cfg["batch_size"]))
         else:
-            PredicteData,nframes=GetPoseS(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes)
+            PredicteData,nframes,scmap_total=GetPoseS(cfg,dlc_cfg, sess, inputs, outputs,cap,nframes)
 
         stop = time.time()
         
@@ -328,7 +331,7 @@ def AnalyzeVideo(video,DLCscorer,trainFraction,cfg,dlc_cfg,sess,inputs, outputs,
 
         print("Saving results in %s..." %(Path(video).parents[0]))
         auxiliaryfunctions.SaveData(PredicteData[:nframes,:], metadata, dataname, pdindex, range(nframes),save_as_csv)
-
+        auxiliaryfunctions.SaveScoreMap(scmap_total,dataname)
 def GetPosesofFrames(cfg,dlc_cfg, sess, inputs, outputs,directory,framelist,nframes,batchsize,rgb):
     ''' Batchwise prediction of pose  for framelist in directory'''
     from skimage import io
@@ -377,8 +380,9 @@ def GetPosesofFrames(cfg,dlc_cfg, sess, inputs, outputs,directory,framelist,nfra
                 else:
                     frame = img_as_ubyte(im)
                     
-                pose = predict.getpose(frame, dlc_cfg, sess, inputs, outputs)
+                pose,scmap = predict.getpose(frame, dlc_cfg, sess, inputs, outputs)
                 PredicteData[counter, :] = pose.flatten()
+                scmap_total.append(scmap)
     else:
         frames = np.empty((batchsize, ny, nx, 3), dtype='ubyte') # this keeps all the frames of a batch
         for counter,framename in enumerate(framelist):
@@ -396,19 +400,20 @@ def GetPosesofFrames(cfg,dlc_cfg, sess, inputs, outputs,directory,framelist,nfra
                     frames[batch_ind] = img_as_ubyte(im)
                     
                 if batch_ind==batchsize-1:
-                    pose = predict.getposeNP(frames,dlc_cfg, sess, inputs, outputs)
+                    pose,scmap = predict.getposeNP(frames,dlc_cfg, sess, inputs, outputs)
                     PredicteData[batch_num*batchsize:(batch_num+1)*batchsize, :] = pose
+                    scmap_total.append(scmap)
                     batch_ind = 0
                     batch_num += 1
                 else:
-                   batch_ind+=1
+                    batch_ind+=1
             
         if batch_ind>0: #take care of the last frames (the batch that might have been processed)
-            pose = predict.getposeNP(frames, dlc_cfg, sess, inputs, outputs) #process the whole batch (some frames might be from previous batch!)
+            pose,scmap = predict.getposeNP(frames, dlc_cfg, sess, inputs, outputs) #process the whole batch (some frames might be from previous batch!)
             PredicteData[batch_num*batchsize:batch_num*batchsize+batch_ind, :] = pose[:batch_ind,:]
-
+            scmap_total.append(scmap)
     pbar.close()
-    return PredicteData,nframes,nx,ny
+    return PredicteData,nframes,nx,ny,scmap
 
 
 def analyze_time_lapse_frames(config,directory,frametype='.png',shuffle=1,trainingsetindex=0,gputouse=None,save_as_csv=False,rgb=True):
@@ -534,7 +539,7 @@ def analyze_time_lapse_frames(config,directory,frametype='.png',shuffle=1,traini
             if nframes>1:
                 start = time.time()
                 
-                PredicteData,nframes,nx,ny=GetPosesofFrames(cfg,dlc_cfg, sess, inputs, outputs,directory,framelist,nframes,dlc_cfg['batch_size'],rgb)
+                PredicteData,nframes,nx,ny,scmap_total=GetPosesofFrames(cfg,dlc_cfg, sess, inputs, outputs,directory,framelist,nframes,dlc_cfg['batch_size'],rgb)
                 stop = time.time()
                 
                 if cfg['cropping']==True:
@@ -559,6 +564,7 @@ def analyze_time_lapse_frames(config,directory,frametype='.png',shuffle=1,traini
                 print("Saving results in %s..." %(directory))
                 
                 auxiliaryfunctions.SaveData(PredicteData[:nframes,:], metadata, dataname, pdindex, framelist,save_as_csv)
+                auxiliaryfunctions.SaveScoreMap(scmap_total,dataname)
                 print("The folder was analyzed. Now your research can truly start!")
                 print("If the tracking is not satisfactory for some frome, consider expanding the training set.")
             else:
